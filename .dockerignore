@@ -10,6 +10,5 @@ README.md
 docker-compose.yml
 Dockerfile
 Dockerfile.dev
-nginx.conf
 database.db
 

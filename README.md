@@ -76,7 +76,6 @@ docker-compose down
 ├── Dockerfile          # Dockerfile для продакшена
 ├── Dockerfile.dev      # Dockerfile для разработки
 ├── docker-compose.yml  # Docker Compose конфигурация
-├── nginx.conf          # Конфигурация Nginx для продакшена
 └── .dockerignore       # Исключения для Docker
 ```
 
