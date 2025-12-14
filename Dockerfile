@@ -30,7 +30,7 @@ RUN npm install -g serve
 COPY --from=builder /app/dist ./dist
 
 # Открываем порт
-EXPOSE 80
+EXPOSE 3333
 
 # Запускаем serve
 CMD ["serve", "-s", "dist", "-l", "80"]
