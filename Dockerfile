@@ -33,5 +33,5 @@ COPY --from=builder /app/dist ./dist
 EXPOSE 3333
 
 # Запускаем serve
-CMD ["serve", "-s", "dist", "-l", "80"]
+CMD ["serve", "-s", "dist", "-l", "3333"]
 
