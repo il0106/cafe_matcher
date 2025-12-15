@@ -8,7 +8,8 @@ services:
       dockerfile: Dockerfile.dev
     container_name: cafe-matcher-dev
     ports:
-      - "3333:3333"
+      - "5173:5173"  # Vite dev server
+      - "3333:3333"  # Backend server
     volumes:
       - .:/app
       - /app/node_modules

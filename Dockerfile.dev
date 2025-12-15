@@ -11,9 +11,10 @@ RUN npm install
 # Копируем исходный код
 COPY . .
 
-# Открываем порт
-EXPOSE 3333
+# Открываем порты
+EXPOSE 5173 3333
 
-# Запускаем dev сервер
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+# Устанавливаем зависимости при запуске (volume mount перезаписывает node_modules)
+# Сначала устанавливаем зависимости, затем запускаем серверы
+CMD sh -c "npm install; npm run dev & npm run dev:server & wait"
 

@@ -20,18 +20,19 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Копируем package файлы
+# Копируем package файлы и устанавливаем зависимости
 COPY package*.json ./
-
-# Устанавливаем только serve для статического сервера
-RUN npm install -g serve
+RUN npm install --production
 
 # Копируем собранные файлы
 COPY --from=builder /app/dist ./dist
 
+# Копируем backend сервер
+COPY server ./server
+
 # Открываем порт
 EXPOSE 3333
 
-# Запускаем serve
-CMD ["serve", "-s", "dist", "-l", "3333"]
+# Запускаем backend сервер (он отдает статические файлы)
+CMD ["node", "server/index.js"]
 
