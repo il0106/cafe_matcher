@@ -5,9 +5,22 @@ import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import Database from 'better-sqlite3';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Подключение к БД
+let db;
+try {
+  const dbPath = path.join(__dirname, '../database.db');
+  db = new Database(dbPath);
+  console.log('Database connected successfully');
+} catch (error) {
+  console.error('Error connecting to database:', error);
+  // Создаем заглушку, чтобы сервер не падал
+  db = null;
+}
 
 const app = express();
 const server = createServer(app);
@@ -23,29 +36,112 @@ app.use(express.static(path.join(__dirname, '../dist')));
 const sessions = new Map();
 const users = new Map(); // userId -> sessionId
 
-// Примеры карточек для демонстрации (в реальном приложении можно брать из БД)
-const SAMPLE_CARDS = [
-  'Итальянская кухня',
-  'Японская кухня',
-  'Мексиканская кухня',
-  'Французская кухня',
-  'Грузинская кухня',
-  'Индийская кухня',
-  'Китайская кухня',
-  'Тайская кухня',
-  'Американская кухня',
-  'Русская кухня',
-  'Средиземноморская кухня',
-  'Вегетарианское меню',
-  'Стейк-хаус',
-  'Пиццерия',
-  'Суши-бар',
-  'Бургерная',
-  'Кафе с кофе',
-  'Паста-бар',
-  'Морепродукты',
-  'Домашняя кухня'
-];
+// Функция для получения ресторанов из БД по кухне
+function getRestaurantsByCuisine(cuisine) {
+  try {
+    if (!db) {
+      console.error('Database not connected');
+      return [];
+    }
+    
+    const query = `
+      SELECT address_name, caption, Cusiene, Average_bill, photos, site, Restaurant_name, Brief_description, general_rating
+      FROM places
+      WHERE Cusiene LIKE ?
+      AND general_rating >= 4.8
+    `;
+    
+    const stmt = db.prepare(query);
+    const rows = stmt.all(`%${cuisine}%`);
+    
+    // Преобразуем строки в нужный формат
+    return rows.map(row => {
+      // Парсим photos из строки в массив URL
+      let photos = [];
+      try {
+        if (row.photos) {
+          const photosStr = String(row.photos).trim();
+          console.log('Parsing photos string:', photosStr.substring(0, 100));
+          
+          // Если строка пустая, пропускаем
+          if (!photosStr || photosStr === 'null' || photosStr === 'None') {
+            photos = [];
+          } else if (photosStr.startsWith('[')) {
+            // Это список - может быть Python или JSON формат
+            // Python использует одинарные кавычки: ['url1', 'url2']
+            // JSON использует двойные кавычки: ["url1", "url2"]
+            
+            // Пробуем сначала как JSON
+            try {
+              photos = JSON.parse(photosStr);
+            } catch (jsonError) {
+              // Если не JSON, значит это Python-стиль список
+              // Извлекаем URL из строки вида ['url1', 'url2'] или ["url1", "url2"]
+              // Удаляем внешние скобки и разбиваем по запятым
+              const inner = photosStr.slice(1, -1).trim(); // Убираем [ и ]
+              if (inner) {
+                // Разбиваем по запятой, учитывая что URL могут быть в кавычках
+                const urlPattern = /['"]([^'"]+)['"]/g;
+                const matches = inner.matchAll(urlPattern);
+                photos = Array.from(matches, m => m[1]);
+                
+                // Если паттерн не сработал, пробуем просто разбить по запятой
+                if (photos.length === 0) {
+                  photos = inner.split(',').map(url => url.trim().replace(/^['"]|['"]$/g, ''));
+                }
+              }
+            }
+          } else if (photosStr.startsWith('"') && photosStr.endsWith('"')) {
+            // Если это JSON строка в кавычках
+            photos = JSON.parse(photosStr);
+          } else if (photosStr.includes(',')) {
+            // Если это список через запятую
+            photos = photosStr.split(',').map(url => url.trim().replace(/^['"]|['"]$/g, ''));
+          } else {
+            // Если это просто строка с URL, создаем массив
+            photos = [photosStr];
+          }
+          // Убеждаемся, что это массив строк и фильтруем пустые значения
+          photos = Array.isArray(photos) 
+            ? photos
+                .filter(url => url && typeof url === 'string' && url.length > 0 && url !== 'null' && url !== 'None')
+                .map(url => {
+                  // Очищаем URL от лишних пробелов и символов
+                  url = url.trim();
+                  // Если URL не начинается с http, добавляем https://
+                  if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+                    url = 'https://' + url;
+                  }
+                  return url;
+                })
+                .filter(url => url && url.length > 0)
+            : [];
+          
+          console.log('Parsed photos:', photos.length, 'URLs');
+        }
+      } catch (e) {
+        // Если не удалось распарсить, оставляем пустой массив
+        console.warn('Error parsing photos:', e.message, 'for photos string:', String(row.photos).substring(0, 100));
+        photos = [];
+      }
+      
+      return {
+        address_name: String(row.address_name || ''),
+        caption: String(row.caption || ''),
+        Cusiene: String(row.Cusiene || ''),
+        Average_bill: String(row.Average_bill || ''),
+        photos: photos,
+        site: String(row.site || ''),
+        Restaurant_name: String(row.Restaurant_name || ''),
+        Brief_description: String(row.Brief_description || ''),
+        general_rating: String(row.general_rating || '')
+      };
+    });
+  } catch (error) {
+    console.error('Error fetching restaurants from DB:', error);
+    return [];
+  }
+}
 
 // Генерация случайного кода сессии
 function generateSessionCode() {
@@ -53,47 +149,60 @@ function generateSessionCode() {
 }
 
 // Создание новой сессии
-app.post('/api/sessions', (req, res) => {
-  const { maxGuests, cards, userId, userName } = req.body;
-  
-  if (!maxGuests || maxGuests < 1) {
-    return res.status(400).json({ error: 'maxGuests обязателен и должен быть >= 1' });
+app.post('/api/sessions', async (req, res) => {
+  try {
+    const { maxGuests, cuisine, userId, userName } = req.body;
+    
+    if (!maxGuests || maxGuests < 1) {
+      return res.status(400).json({ error: 'maxGuests обязателен и должен быть >= 1' });
+    }
+
+    if (!cuisine) {
+      return res.status(400).json({ error: 'cuisine обязательна' });
+    }
+
+    if (!userId || !userName) {
+      return res.status(400).json({ error: 'userId и userName обязательны' });
+    }
+
+    // Получаем рестораны из БД
+    const restaurants = getRestaurantsByCuisine(cuisine);
+    
+    if (restaurants.length === 0) {
+      return res.status(400).json({ error: 'Рестораны для выбранной кухни не найдены' });
+    }
+
+    const sessionId = uuidv4();
+    let sessionCode = generateSessionCode();
+    
+    // Убеждаемся, что код уникален
+    while (Array.from(sessions.values()).some(s => s.code === sessionCode)) {
+      sessionCode = generateSessionCode();
+    }
+    
+    // Перемешиваем карточки (рестораны)
+    const shuffledCards = [...restaurants].sort(() => Math.random() - 0.5);
+
+    // Создаем сессию с хостом как первым участником
+    const session = {
+      id: sessionId,
+      code: sessionCode,
+      maxGuests: maxGuests,
+      cards: shuffledCards,
+      participants: [{ userId: userId.toString(), userName, joinedAt: Date.now() }],
+      selections: {}, // userId -> cardId (выбранная карточка)
+      status: 'waiting', // waiting, playing, finished
+      createdAt: Date.now()
+    };
+
+    sessions.set(sessionId, session);
+    users.set(userId.toString(), sessionId);
+    
+    res.json({ sessionId, sessionCode, maxGuests, cardsCount: shuffledCards.length });
+  } catch (error) {
+    console.error('Error creating session:', error);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера: ' + error.message });
   }
-
-  if (!userId || !userName) {
-    return res.status(400).json({ error: 'userId и userName обязательны' });
-  }
-
-  const sessionId = uuidv4();
-  let sessionCode = generateSessionCode();
-  
-  // Убеждаемся, что код уникален
-  while (Array.from(sessions.values()).some(s => s.code === sessionCode)) {
-    sessionCode = generateSessionCode();
-  }
-
-  // Используем переданные карточки или дефолтные
-  const sessionCards = cards && cards.length > 0 ? cards : [...SAMPLE_CARDS];
-  
-  // Перемешиваем карточки
-  const shuffledCards = [...sessionCards].sort(() => Math.random() - 0.5);
-
-  // Создаем сессию с хостом как первым участником
-  const session = {
-    id: sessionId,
-    code: sessionCode,
-    maxGuests: maxGuests,
-    cards: shuffledCards,
-    participants: [{ userId: userId.toString(), userName, joinedAt: Date.now() }],
-    selections: {}, // userId -> cardId (выбранная карточка)
-    status: 'waiting', // waiting, playing, finished
-    createdAt: Date.now()
-  };
-
-  sessions.set(sessionId, session);
-  users.set(userId.toString(), sessionId);
-  
-  res.json({ sessionId, sessionCode, maxGuests, cardsCount: shuffledCards.length });
 });
 
 // Присоединение к сессии

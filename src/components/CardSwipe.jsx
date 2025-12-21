@@ -8,6 +8,7 @@ export function CardSwipe({ cards, onCardSelected, onFinished }) {
   const cardRef = useRef(null);
 
   const currentCard = cards[currentIndex];
+  const isRestaurantCard = currentCard && typeof currentCard === 'object';
 
   useEffect(() => {
     if (!cardRef.current) return;
@@ -117,7 +118,62 @@ export function CardSwipe({ cards, onCardSelected, onFinished }) {
           }}
         >
           <div className="swipe-card-content">
-            <h2>{currentCard}</h2>
+            {isRestaurantCard ? (
+              <>
+                {currentCard.photos && Array.isArray(currentCard.photos) && currentCard.photos.length > 0 && (
+                  <div className="restaurant-photos">
+                    {currentCard.photos.slice(0, 3).map((photo, idx) => {
+                      // Проверяем, что photo - это валидная строка
+                      const photoUrl = typeof photo === 'string' ? photo.trim() : '';
+                      if (!photoUrl) return null;
+                      
+                      return (
+                        <img 
+                          key={idx} 
+                          src={photoUrl} 
+                          alt={`Фото ${idx + 1}`}
+                          className="restaurant-photo"
+                          onError={(e) => { 
+                            e.target.style.display = 'none'; 
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+                <h2>{currentCard.Restaurant_name || 'Ресторан'}</h2>
+                {currentCard.Brief_description && (
+                  <p className="restaurant-description">{currentCard.Brief_description}</p>
+                )}
+                {currentCard.general_rating && (
+                  <div className="restaurant-rating">
+                    <span className="rating-label">Рейтинг:</span>
+                    <span className="rating-value">{currentCard.general_rating}</span>
+                  </div>
+                )}
+                {currentCard.Average_bill && (
+                  <div className="restaurant-bill">
+                    <span className="bill-label">Средний чек:</span>
+                    <span className="bill-value">{currentCard.Average_bill}</span>
+                  </div>
+                )}
+                {currentCard.address_name && (
+                  <div className="restaurant-address">
+                    <span className="address-label">Адрес:</span>
+                    <span className="address-value">{currentCard.address_name}</span>
+                  </div>
+                )}
+                {currentCard.site && (
+                  <div className="restaurant-site">
+                    <a href={currentCard.site} target="_blank" rel="noopener noreferrer" className="site-link">
+                      {currentCard.site}
+                    </a>
+                  </div>
+                )}
+              </>
+            ) : (
+              <h2>{currentCard}</h2>
+            )}
           </div>
           {offset.x > 50 && (
             <div className="swipe-indicator swipe-like">✓ Лайк</div>
