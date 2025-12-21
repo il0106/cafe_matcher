@@ -10,5 +10,4 @@ README.md
 docker-compose.yml
 Dockerfile
 Dockerfile.dev
-database.db
 
