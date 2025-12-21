@@ -38,3 +38,5 @@ networks:
   cafe-matcher-network:
     driver: bridge
 
+# docker-compose --profile prod up       docker-compose --profile dev up
+

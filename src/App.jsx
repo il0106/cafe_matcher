@@ -18,6 +18,7 @@ const VIEWS = {
 export function App() {
   const [view, setView] = useState(VIEWS.HOME);
   const [user, setUser] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null); // userId текущего пользователя
   const [sessionId, setSessionId] = useState(null);
   const [sessionCode, setSessionCode] = useState(null);
   const [isHost, setIsHost] = useState(false);
@@ -43,27 +44,43 @@ export function App() {
     }
   }, []);
 
+  // Функция для получения userId (из Telegram или генерация)
+  const getUserId = () => {
+    if (user?.id) return user.id;
+    if (currentUserId) return currentUserId;
+    return window.Telegram?.WebApp?.initDataUnsafe?.user?.id?.toString() || 
+           `user_${Date.now()}_${Math.random()}`;
+  };
+
   const handleSessionCreated = async (newSessionId, newSessionCode) => {
     setSessionId(newSessionId);
     setSessionCode(newSessionCode);
     setIsHost(true);
     setView(VIEWS.WAITING);
     
-    // Получаем информацию о сессии для получения начального списка участников
+    // Получаем информацию о сессии для получения начального списка участников и userId
+    let actualUserId = user?.id || currentUserId || getUserId();
     try {
       const response = await fetch(`/api/sessions/${newSessionId}`);
       if (response.ok) {
         const sessionData = await response.json();
         setParticipants(sessionData.participants || []);
         setMaxGuests(sessionData.maxGuests || 2);
+        // Для хоста userId - это первый участник
+        if (sessionData.participants && sessionData.participants.length > 0) {
+          actualUserId = sessionData.participants[0].userId;
+          if (!currentUserId && !user?.id) {
+            setCurrentUserId(actualUserId);
+          }
+        }
       }
     } catch (error) {
       console.error('Error fetching session data:', error);
     }
     
     // Подключаемся к WebSocket
-    if (user) {
-      const websocket = new SessionWebSocket(newSessionId, user.id, {
+    console.log('[App] Creating WebSocket with userId:', actualUserId, 'sessionId:', newSessionId);
+    const websocket = new SessionWebSocket(newSessionId, actualUserId, {
         onSessionState: (session) => {
           setParticipants(session.participants || []);
           setMaxGuests(session.maxGuests || 2);
@@ -92,7 +109,6 @@ export function App() {
       });
       websocket.connect();
       setWs(websocket);
-    }
   };
 
   const handleSessionJoined = async (newSessionId, newIsHost) => {
@@ -100,7 +116,8 @@ export function App() {
     setIsHost(newIsHost);
     setView(VIEWS.WAITING);
     
-    // Получаем информацию о сессии
+    // Получаем информацию о сессии и определяем userId из участников
+    let actualUserId = user?.id || currentUserId || getUserId();
     try {
       const response = await fetch(`/api/sessions/${newSessionId}`);
       if (response.ok) {
@@ -108,14 +125,26 @@ export function App() {
         setSessionCode(sessionData.code);
         setMaxGuests(sessionData.maxGuests || 2);
         setParticipants(sessionData.participants || []);
+        // Находим userId текущего пользователя среди участников (последний добавленный для присоединившегося)
+        if (sessionData.participants && sessionData.participants.length > 0) {
+          // Для присоединившегося пользователя - это последний участник (который не хост)
+          const myParticipant = sessionData.participants.find(p => p.userId !== sessionData.participants[0].userId) || 
+                                sessionData.participants[sessionData.participants.length - 1];
+          if (myParticipant) {
+            actualUserId = myParticipant.userId;
+            if (!currentUserId && !user?.id) {
+              setCurrentUserId(actualUserId);
+            }
+          }
+        }
       }
     } catch (error) {
       console.error('Error fetching session data:', error);
     }
     
     // Подключаемся к WebSocket
-    if (user) {
-      const websocket = new SessionWebSocket(newSessionId, user.id, {
+    console.log('[App] Creating WebSocket with userId:', actualUserId, 'sessionId:', newSessionId);
+    const websocket = new SessionWebSocket(newSessionId, actualUserId, {
         onSessionState: (session) => {
           setSessionCode(session.code);
           setMaxGuests(session.maxGuests || 2);
@@ -150,7 +179,6 @@ export function App() {
       });
       websocket.connect();
       setWs(websocket);
-    }
   };
 
   const handleStartSession = async () => {

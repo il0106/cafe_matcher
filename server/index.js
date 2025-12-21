@@ -115,12 +115,15 @@ app.post('/api/sessions/join', (req, res) => {
     return res.status(400).json({ error: 'Сессия уже началась или завершена' });
   }
 
+  // Приводим userId к строке для консистентности
+  const userIdStr = userId.toString();
+  
   // Проверяем, не присоединился ли уже
-  if (session.participants.find(p => p.userId === userId)) {
+  if (session.participants.find(p => p.userId === userIdStr)) {
     return res.json({ 
       sessionId: session.id, 
       sessionCode: session.code,
-      isHost: session.participants[0]?.userId === userId
+      isHost: session.participants[0]?.userId === userIdStr
     });
   }
 
@@ -130,8 +133,8 @@ app.post('/api/sessions/join', (req, res) => {
   }
 
   // Добавляем участника
-  session.participants.push({ userId, userName, joinedAt: Date.now() });
-  users.set(userId, session.id);
+  session.participants.push({ userId: userIdStr, userName, joinedAt: Date.now() });
+  users.set(userIdStr, session.id);
 
   // Уведомляем всех участников о новом присоединении
   broadcastToSession(session.id, {
@@ -142,7 +145,7 @@ app.post('/api/sessions/join', (req, res) => {
   res.json({ 
     sessionId: session.id, 
     sessionCode: session.code,
-    isHost: session.participants[0]?.userId === userId
+    isHost: session.participants[0]?.userId === userIdStr
   });
 });
 
@@ -184,6 +187,10 @@ app.post('/api/sessions/:sessionId/start', (req, res) => {
 
   session.status = 'playing';
   
+  console.log(`[API] Starting session ${sessionId} with ${session.participants.length} participants`);
+  console.log(`[API] Participant userIds: ${session.participants.map(p => p.userId).join(', ')}`);
+  console.log(`[API] Connected clients: ${Array.from(clients.keys()).join(', ')}`);
+  
   // Уведомляем всех через WebSocket
   broadcastToSession(sessionId, {
     type: 'session_started',
@@ -207,24 +214,38 @@ wss.on('connection', (ws, req) => {
       
       switch (data.type) {
         case 'register': {
-          userId = data.userId;
+          userId = data.userId.toString();
           sessionId = data.sessionId;
           clients.set(userId, ws);
+          console.log(`[WebSocket] User ${userId} registered for session ${sessionId}, total clients: ${clients.size}`);
           
           // Отправляем текущее состояние сессии
           const currentSession = sessions.get(sessionId);
           if (currentSession) {
-            ws.send(JSON.stringify({
-              type: 'session_state',
-              session: {
-                id: currentSession.id,
-                code: currentSession.code,
-                status: currentSession.status,
-                cards: currentSession.status === 'playing' ? currentSession.cards : undefined,
-                participants: currentSession.participants.map(p => ({ userId: p.userId, userName: p.userName })),
-                selections: currentSession.selections
-              }
-            }));
+            // Если сессия уже началась, отправляем session_started вместо session_state
+            if (currentSession.status === 'playing') {
+              ws.send(JSON.stringify({
+                type: 'session_started',
+                cards: currentSession.cards,
+                participants: currentSession.participants.map(p => ({ userId: p.userId, userName: p.userName }))
+              }));
+              console.log(`[WebSocket] Sent session_started to ${userId} (session already playing)`);
+            } else {
+              ws.send(JSON.stringify({
+                type: 'session_state',
+                session: {
+                  id: currentSession.id,
+                  code: currentSession.code,
+                  status: currentSession.status,
+                  cards: undefined,
+                  participants: currentSession.participants.map(p => ({ userId: p.userId, userName: p.userName })),
+                  selections: currentSession.selections
+                }
+              }));
+              console.log(`[WebSocket] Sent session_state to ${userId} (status: ${currentSession.status})`);
+            }
+          } else {
+            console.log(`[WebSocket] Session ${sessionId} not found for user ${userId}`);
           }
           break;
         }
@@ -310,14 +331,22 @@ wss.on('connection', (ws, req) => {
 // Отправка сообщения всем участникам сессии
 function broadcastToSession(sessionId, message) {
   const session = sessions.get(sessionId);
-  if (!session) return;
+  if (!session) {
+    console.log(`[broadcastToSession] Session ${sessionId} not found`);
+    return;
+  }
 
   const messageStr = JSON.stringify(message);
+  console.log(`[broadcastToSession] Broadcasting to session ${sessionId}, message type: ${message.type}, participants: ${session.participants.length}`);
   
   session.participants.forEach(participant => {
     const client = clients.get(participant.userId);
+    console.log(`[broadcastToSession] Participant ${participant.userId} (${participant.userName}): client found=${!!client}, readyState=${client?.readyState}`);
     if (client && client.readyState === 1) { // WebSocket.OPEN
       client.send(messageStr);
+      console.log(`[broadcastToSession] Message sent to ${participant.userId}`);
+    } else {
+      console.log(`[broadcastToSession] Failed to send to ${participant.userId}: client=${!!client}, readyState=${client?.readyState}`);
     }
   });
 }

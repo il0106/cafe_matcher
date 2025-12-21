@@ -18,18 +18,21 @@ export class SessionWebSocket {
     const wsHost = isDev ? `${window.location.hostname}:${wsPort}` : window.location.host;
     const wsUrl = `${protocol}//${wsHost}`;
 
+    console.log('[WebSocket] Connecting to:', wsUrl, 'sessionId:', this.sessionId, 'userId:', this.userId);
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {
-      console.log('WebSocket connected');
+      console.log('[WebSocket] Connected successfully');
       this.reconnectAttempts = 0;
       
       // Регистрируемся
-      this.ws.send(JSON.stringify({
+      const registerMessage = {
         type: 'register',
         userId: this.userId,
         sessionId: this.sessionId
-      }));
+      };
+      console.log('[WebSocket] Sending register message:', registerMessage);
+      this.ws.send(JSON.stringify(registerMessage));
 
       if (this.callbacks.onConnect) {
         this.callbacks.onConnect();
@@ -46,7 +49,13 @@ export class SessionWebSocket {
     };
 
     this.ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+      console.error('[WebSocket] Error:', error);
+      console.error('[WebSocket] Error details:', {
+        url: this.ws?.url,
+        readyState: this.ws?.readyState,
+        sessionId: this.sessionId,
+        userId: this.userId
+      });
       if (this.callbacks.onError) {
         this.callbacks.onError(error);
       }
